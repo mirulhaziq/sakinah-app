@@ -1,374 +1,238 @@
-// Sakinah سكينة — Chat Page (full inline styles)
-// 4 persona selector, streaming AI, clear history, Supabase persistence
+// Sakinah — Chat Page (Stoic style)
+// User bubble: surface bg + gold left border. Assistant: bare bg.
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
-import { supabase } from '../lib/supabase'
-import { sendToGemini } from '../lib/gemini'
 import { PERSONAS } from '../data/personas'
-import Navbar from '../components/Navbar'
+import { supabase } from '../lib/supabase'
+import { sendToGeminiStream } from '../lib/gemini'
+import BottomNav from '../components/BottomNav'
 import ConfirmModal from '../components/ConfirmModal'
-import { SkeletonCard } from '../components/SkeletonLoader'
 
-const CONTEXT_LIMIT = 30
-
-function groupByDate(messages) {
-    const groups = []
-    let lastDate = null
-    for (const msg of messages) {
-        const d = new Date(msg.created_at).toDateString()
-        if (d !== lastDate) {
-            groups.push({ type: 'divider', date: msg.created_at, key: `div-${msg.id}` })
-            lastDate = d
-        }
-        groups.push({ type: 'message', msg, key: msg.id })
-    }
-    return groups
-}
-
-function formatDateDivider(dateStr) {
-    const d = new Date(dateStr)
-    const today = new Date()
-    const yesterday = new Date(); yesterday.setDate(today.getDate() - 1)
-    if (d.toDateString() === today.toDateString()) return 'Hari Ini'
-    if (d.toDateString() === yesterday.toDateString()) return 'Semalam'
-    return d.toLocaleDateString('ms-MY', { day: 'numeric', month: 'long', year: 'numeric' })
+function SendIcon() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+        </svg>
+    )
 }
 
 export default function ChatPage() {
     const { user, profile } = useAuth()
-    const { lang, t } = useLanguage()
-    const [persona, setPersona] = useState(profile?.preferred_persona || 'balanced')
+    const { t, lang } = useLanguage()
     const [messages, setMessages] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [sending, setSending] = useState(false)
-    const [inputText, setInputText] = useState('')
-    const [streamText, setStreamText] = useState('')
+    const [input, setInput] = useState('')
+    const [loading, setLoading] = useState(false)
+    const [streaming, setStreaming] = useState(false)
     const [error, setError] = useState(null)
     const [showClear, setShowClear] = useState(false)
+    const [persona, setPersona] = useState(profile?.preferred_persona || 'balanced')
+    const [msgLoading, setMsgLoading] = useState(true)
     const bottomRef = useRef(null)
-    const inputRef = useRef(null)
+    const textareaRef = useRef(null)
 
-    // Load messages from Supabase
-    const loadMessages = useCallback(async () => {
-        if (!user) return
-        setLoading(true)
-        try {
-            const { data, error } = await supabase
-                .from('chat_messages')
-                .select('*')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: true })
-            if (error) throw error
-            setMessages(data || [])
-        } catch (err) {
-            setError(err.message)
-        } finally {
-            setLoading(false)
-        }
-    }, [user])
+    useEffect(() => { loadMessages() }, [user?.id])
+    useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
-    useEffect(() => { loadMessages() }, [loadMessages])
-
-    useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }, [messages, sending, streamText])
+    async function loadMessages() {
+        if (!user?.id) return
+        setMsgLoading(true)
+        const { data } = await supabase.from('chat_messages').select('*')
+            .eq('user_id', user.id).order('created_at', { ascending: true }).limit(100)
+        setMessages(data || [])
+        setMsgLoading(false)
+    }
 
     async function handleSend() {
-        const content = inputText.trim()
-        if (!content || sending) return
-        setInputText('')
-        setSending(true)
+        if (!input.trim() || loading || streaming) return
+        const text = input.trim()
+        setInput('')
         setError(null)
-        setStreamText('')
 
-        const tempId = `temp-${Date.now()}`
-        const tempMsg = { id: tempId, user_id: user.id, persona, role: 'user', content, created_at: new Date().toISOString() }
-        setMessages(prev => [...prev, tempMsg])
+        const userMsg = { id: Date.now(), role: 'user', content: text, created_at: new Date().toISOString() }
+        setMessages(prev => [...prev, userMsg])
+
+        // Persist user message
+        supabase.from('chat_messages').insert({ user_id: user.id, role: 'user', content: text, persona }).then()
+
+        const aiMsg = { id: Date.now() + 1, role: 'assistant', content: '', created_at: new Date().toISOString() }
+        setMessages(prev => [...prev, aiMsg])
+        setStreaming(true)
 
         try {
-            // Save user message
-            const { data: savedUser, error: ue } = await supabase
-                .from('chat_messages')
-                .insert({ user_id: user.id, persona, role: 'user', content })
-                .select().single()
-            if (ue) throw ue
-
-            // Build history for Gemini
-            const allMsgs = [...messages, savedUser]
-            const geminiHistory = allMsgs.slice(-CONTEXT_LIMIT).map(m => ({ role: m.role, content: m.content }))
-
-            // Get AI response (non-streaming, stable)
+            const history = [...messages, userMsg].map(m => ({ role: m.role, parts: [{ text: m.content }] }))
             const systemPrompt = PERSONAS[persona]?.systemPrompt || PERSONAS.balanced.systemPrompt
-            const aiReply = await sendToGemini([...geminiHistory], systemPrompt)
-
-            // Save AI message
-            const { data: savedAi, error: ae } = await supabase
-                .from('chat_messages')
-                .insert({ user_id: user.id, persona, role: 'assistant', content: aiReply })
-                .select().single()
-            if (ae) throw ae
-
-            setMessages(prev => {
-                const filtered = prev.filter(m => m.id !== tempId)
-                return [...filtered, savedUser, savedAi]
+            let fullText = ''
+            await sendToGeminiStream(history, systemPrompt, (chunk) => {
+                fullText += chunk
+                setMessages(prev => prev.map(m => m.id === aiMsg.id ? { ...m, content: fullText } : m))
             })
+            supabase.from('chat_messages').insert({ user_id: user.id, role: 'assistant', content: fullText, persona }).then()
         } catch (err) {
-            setMessages(prev => prev.filter(m => m.id !== tempId))
-            setError(err.message || t('chatError'))
+            setError(t('chatError'))
+            setMessages(prev => prev.filter(m => m.id !== aiMsg.id))
         } finally {
-            setSending(false)
-            setStreamText('')
-            inputRef.current?.focus()
+            setStreaming(false)
+            setLoading(false)
         }
     }
 
-    async function handleClearHistory() {
-        try {
-            await supabase.from('chat_messages').delete().eq('user_id', user.id)
-            setMessages([])
-        } catch (err) {
-            setError(err.message)
-        }
+    async function handleClear() {
+        await supabase.from('chat_messages').delete().eq('user_id', user.id)
+        setMessages([])
         setShowClear(false)
     }
 
-    function handleKeyDown(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault()
-            handleSend()
-        }
-    }
-
-    const personaLabels = {
-        friend: t('chatPersonaFriend'),
-        ustaz: t('chatPersonaUstaz'),
-        counselor: t('chatPersonaCounselor'),
-        balanced: t('chatPersonaBalanced'),
-    }
-
-    const items = groupByDate(messages)
-
-    const pageStyle = { minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }
-
-    const bubbleStyle = (role) => ({
-        maxWidth: '80%',
-        padding: '11px 16px',
-        borderRadius: role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-        background: role === 'user' ? 'var(--accent-gradient)' : 'var(--bg-card)',
-        border: role === 'user' ? 'none' : '1px solid var(--glass-border)',
-        color: role === 'user' ? 'white' : 'var(--text-primary)',
-        fontSize: 14, lineHeight: 1.7,
-        boxShadow: 'var(--shadow)',
-        wordBreak: 'break-word',
-        whiteSpace: 'pre-wrap',
-    })
+    const personaList = Object.values(PERSONAS)
 
     return (
-        <div style={pageStyle}>
-            <Navbar />
+        <>
+            <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto' }}>
 
-            {/* Persona selector */}
-            <div style={{
-                background: 'var(--bg-secondary)',
-                borderBottom: '1px solid var(--glass-border)',
-                padding: '10px 16px',
-                maxWidth: 480, margin: '0 auto', width: '100%',
-            }}>
-                <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-                    {Object.values(PERSONAS).map(p => {
-                        const active = persona === p.key
-                        return (
-                            <button
-                                key={p.key}
-                                onClick={() => setPersona(p.key)}
-                                style={{
-                                    padding: '6px 14px', borderRadius: 20, flexShrink: 0,
-                                    border: `1px solid ${active ? 'var(--accent)' : 'var(--glass-border)'}`,
-                                    background: active ? 'rgba(201,169,110,0.15)' : 'transparent',
-                                    color: active ? 'var(--accent)' : 'var(--text-muted)',
-                                    fontSize: 12, fontWeight: active ? 700 : 500,
-                                    cursor: 'pointer', transition: 'all 0.2s ease',
-                                }}
-                            >
-                                {p.emoji} {lang === 'bm' ? p.labelBM : p.labelEN}
+                {/* Header */}
+                <div style={{
+                    padding: 'calc(48px + env(safe-area-inset-top, 0px)) 20px 0',
+                    flexShrink: 0,
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 600, color: 'var(--text)' }}>
+                            {lang === 'bm' ? 'Perbualan' : 'Chat'}
+                        </h1>
+                        {messages.length > 0 && (
+                            <button onClick={() => setShowClear(true)} style={{
+                                background: 'none', border: 'none', color: 'var(--text-muted)',
+                                fontSize: 13, cursor: 'pointer', fontFamily: 'Noto Sans, sans-serif',
+                                paddingTop: 6,
+                            }}>
+                                {t('chatClearBtn')}
                             </button>
-                        )
-                    })}
-                    {messages.length > 0 && (
-                        <button
-                            onClick={() => setShowClear(true)}
-                            style={{
-                                marginLeft: 'auto', padding: '6px 12px', borderRadius: 20, flexShrink: 0,
-                                border: '1px solid rgba(248,113,113,0.3)',
-                                background: 'transparent', color: '#f87171',
-                                fontSize: 12, cursor: 'pointer',
-                            }}
-                        >
-                            🗑 {t('chatClearBtn')}
-                        </button>
-                    )}
-                </div>
-            </div>
+                        )}
+                    </div>
 
-            {/* Messages area */}
-            <div style={{
-                flex: 1, overflowY: 'auto',
-                maxWidth: 480, margin: '0 auto', width: '100%',
-                padding: '16px 16px 100px',
-            }}>
-                {loading ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 12 }}>
-                        {[1, 2, 3].map(i => <SkeletonCard key={i} height={60} />)}
-                    </div>
-                ) : messages.length === 0 ? (
-                    <div style={{ textAlign: 'center', paddingTop: 60, animation: 'sakinahSlideUp 0.4s ease' }}>
-                        <div style={{ fontSize: 52, marginBottom: 16 }}>🕌</div>
-                        <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: 'var(--text-primary)', marginBottom: 10 }}>
-                            {t('chatEmptyTitle')}
-                        </h2>
-                        <p style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.7, maxWidth: 300, margin: '0 auto' }}>
-                            {t('chatEmptySub')}
-                        </p>
-                    </div>
-                ) : (
-                    <>
-                        {items.map(item => {
-                            if (item.type === 'divider') {
-                                return (
-                                    <div key={item.key} style={{ textAlign: 'center', margin: '16px 0', color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, letterSpacing: '0.05em' }}>
-                                        — {formatDateDivider(item.date)} —
-                                    </div>
-                                )
-                            }
-                            const { msg } = item
-                            const isUser = msg.role === 'user'
+                    {/* Persona row */}
+                    <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, marginBottom: 16, scrollbarWidth: 'none' }}>
+                        {personaList.map(p => {
+                            const active = persona === p.key
                             return (
-                                <div key={item.key} style={{
-                                    display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start',
-                                    marginBottom: 12, animation: 'sakinahSlideUp 0.3s ease',
+                                <button key={p.key} onClick={() => setPersona(p.key)} style={{
+                                    flexShrink: 0, padding: '7px 16px', borderRadius: 20,
+                                    border: `0.5px solid ${active ? 'var(--gold)' : 'var(--border)'}`,
+                                    background: 'var(--surface)', cursor: 'pointer',
+                                    color: active ? 'var(--gold)' : 'var(--text-sub)',
+                                    fontWeight: active ? 600 : 400,
+                                    fontSize: 13, fontFamily: 'Noto Sans, sans-serif',
+                                    transition: 'all 0.15s ease',
+                                    whiteSpace: 'nowrap',
                                 }}>
-                                    {!isUser && (
-                                        <div style={{
-                                            width: 32, height: 32, borderRadius: '50%',
-                                            background: 'rgba(201,169,110,0.15)',
-                                            border: '1px solid rgba(201,169,110,0.3)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: 14, marginRight: 8, flexShrink: 0, alignSelf: 'flex-end',
-                                        }}>
-                                            {PERSONAS[msg.persona || 'balanced']?.emoji || '🕌'}
-                                        </div>
-                                    )}
-                                    <div style={bubbleStyle(msg.role)}>
-                                        {msg.content}
-                                    </div>
-                                </div>
+                                    {lang === 'bm' ? p.labelBM : p.labelEN}
+                                </button>
                             )
                         })}
-                    </>
-                )}
+                    </div>
+                </div>
 
-                {/* Typing indicator */}
-                {sending && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, animation: 'sakinahSlideUp 0.3s ease' }}>
-                        <div style={{
-                            width: 32, height: 32, borderRadius: '50%',
-                            background: 'rgba(201,169,110,0.15)',
-                            border: '1px solid rgba(201,169,110,0.3)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
-                        }}>
-                            {PERSONAS[persona]?.emoji || '🕌'}
+                {/* Messages */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }}>
+                    {msgLoading ? (
+                        <div style={{ padding: '40px 0', display: 'flex', justifyContent: 'center', gap: 8 }}>
+                            {[0, 1, 2].map(i => <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'bounce 1.2s infinite', animationDelay: `${i * 0.2}s` }} />)}
                         </div>
-                        <div style={{
-                            background: 'var(--bg-card)', border: '1px solid var(--glass-border)',
-                            borderRadius: '18px 18px 18px 4px',
-                            padding: '12px 16px', display: 'flex', gap: 4, alignItems: 'center',
-                        }}>
-                            {[0, 1, 2].map(i => (
-                                <span key={i} style={{
-                                    width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)',
-                                    display: 'inline-block',
-                                    animation: 'sakinahBounce 1.2s infinite',
-                                    animationDelay: `${i * 0.15}s`,
-                                }} />
+                    ) : messages.length === 0 ? (
+                        <div style={{ padding: '60px 0', textAlign: 'center' }}>
+                            <p style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: 'var(--text)', marginBottom: 10 }}>
+                                {t('chatEmptyTitle')}
+                            </p>
+                            <p style={{ color: 'var(--text-sub)', fontSize: 14, lineHeight: 1.7 }}>{t('chatEmptySub')}</p>
+                        </div>
+                    ) : (
+                        <div style={{ paddingTop: 12, paddingBottom: 12 }}>
+                            {messages.map(msg => (
+                                <div key={msg.id} style={{
+                                    marginBottom: 16,
+                                    display: 'flex',
+                                    flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+                                }}>
+                                    {msg.role === 'user' ? (
+                                        // User: surface bg + gold left border
+                                        <div style={{
+                                            background: 'var(--surface)',
+                                            borderLeft: '2px solid var(--gold)',
+                                            borderRadius: '16px 16px 4px 16px',
+                                            padding: '12px 16px',
+                                            maxWidth: '78%',
+                                            color: 'var(--text)', fontSize: 15, lineHeight: 1.6,
+                                            fontFamily: 'Noto Sans, sans-serif',
+                                        }}>
+                                            {msg.content}
+                                        </div>
+                                    ) : (
+                                        // Assistant: just bare, no background
+                                        <div style={{
+                                            maxWidth: '88%', padding: '4px 0',
+                                            color: msg.content ? 'var(--text)' : 'var(--text-muted)',
+                                            fontSize: 15, lineHeight: 1.75,
+                                            fontFamily: 'Noto Sans, sans-serif',
+                                        }}>
+                                            {msg.content || (
+                                                <span style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+                                                    {[0, 1, 2].map(i => <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'bounce 1.2s infinite', animationDelay: `${i * 0.2}s` }} />)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             ))}
+                            {error && (
+                                <div style={{ color: 'var(--error)', fontSize: 13, marginBottom: 12, textAlign: 'center' }}>{error}</div>
+                            )}
+                            <div ref={bottomRef} />
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
 
-                {error && (
-                    <div style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, color: 'var(--error)', fontSize: 13 }}>
-                        ⚠️ {error}
-                        <button onClick={() => setError(null)} style={{ marginLeft: 10, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12 }}>✕</button>
-                    </div>
-                )}
-
-                <div ref={bottomRef} />
-            </div>
-
-            {/* Input bar */}
-            <div style={{
-                position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-                width: '100%', maxWidth: 480,
-                background: 'var(--bg-secondary)',
-                borderTop: '1px solid var(--glass-border)',
-                padding: '12px 16px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                backdropFilter: 'blur(20px)',
-            }}>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                    <textarea
-                        ref={inputRef}
-                        value={inputText}
-                        onChange={e => setInputText(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder={t('chatInputPlaceholder')}
-                        disabled={sending}
-                        rows={1}
-                        style={{
-                            flex: 1, padding: '11px 14px',
-                            background: 'rgba(255,255,255,0.05)',
-                            border: '1px solid var(--glass-border)',
-                            borderRadius: 12, color: 'var(--text-primary)',
-                            fontSize: 14, outline: 'none', fontFamily: 'inherit',
-                            resize: 'none', lineHeight: 1.5, maxHeight: 120, overflowY: 'auto',
-                            transition: 'border-color 0.2s',
-                        }}
-                        onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-                        onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
-                    />
-                    <button
-                        onClick={handleSend}
-                        disabled={sending || !inputText.trim()}
-                        style={{
-                            width: 44, height: 44, borderRadius: 12,
-                            background: sending || !inputText.trim() ? 'var(--bg-card)' : 'var(--accent-gradient)',
-                            border: 'none', cursor: sending || !inputText.trim() ? 'not-allowed' : 'pointer',
+                {/* Input bar */}
+                <div style={{
+                    flexShrink: 0, padding: '10px 16px',
+                    paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 8px))',
+                    borderTop: '0.5px solid var(--border)',
+                    background: 'var(--bg)',
+                }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                        <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+                            placeholder={t('chatInputPlaceholder')}
+                            rows={1}
+                            style={{
+                                flex: 1, padding: '12px 14px',
+                                background: 'var(--surface)', border: '0.5px solid var(--border)',
+                                borderRadius: 22, color: 'var(--text)', resize: 'none',
+                                fontFamily: 'Noto Sans, sans-serif', fontSize: 15, outline: 'none',
+                                lineHeight: 1.5, maxHeight: 120, overflowY: 'auto',
+                                transition: 'border-color 0.2s',
+                            }}
+                            onFocus={e => e.currentTarget.style.borderColor = 'var(--gold)'}
+                            onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                        />
+                        <button onClick={handleSend} disabled={!input.trim() || loading || streaming} style={{
+                            width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
+                            background: 'var(--gold)', border: 'none', cursor: 'pointer',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            transition: 'all 0.2s ease', opacity: sending || !inputText.trim() ? 0.5 : 1,
-                            flexShrink: 0,
-                        }}
-                        onMouseEnter={e => { if (!sending && inputText.trim()) e.currentTarget.style.opacity = '0.85' }}
-                        onMouseLeave={e => e.currentTarget.style.opacity = sending || !inputText.trim() ? '0.5' : '1'}
-                    >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="22" y1="2" x2="11" y2="13" />
-                            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                        </svg>
-                    </button>
+                            color: '#1A160B', opacity: (!input.trim() || loading || streaming) ? 0.4 : 1,
+                            transition: 'opacity 0.15s ease',
+                        }}>
+                            <SendIcon />
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            {showClear && (
-                <ConfirmModal
-                    message={t('chatClearConfirm')}
-                    confirmLabel={t('chatClearConfirmBtn')}
-                    cancelLabel={t('chatClearCancelBtn')}
-                    onConfirm={handleClearHistory}
-                    onCancel={() => setShowClear(false)}
-                    danger
-                />
-            )}
-        </div>
+            {showClear && <ConfirmModal
+                message={t('chatClearConfirm')} confirmLabel={t('chatClearConfirmBtn')} cancelLabel={t('chatClearCancelBtn')}
+                onConfirm={handleClear} onCancel={() => setShowClear(false)} danger />}
+            <BottomNav />
+        </>
     )
 }

@@ -1,41 +1,31 @@
-// Sakinah سكينة — Skeleton Loader Component
-// Animated shimmer blocks for loading states
+// Sakinah — Skeleton Loader (Stoic style)
 
-export default function SkeletonLoader({ lines = 3, height = 18, width = '100%', style = {} }) {
-    const shimmerStyle = {
-        background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.04) 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'sakinahShimmer 1.5s infinite',
-        borderRadius: 8,
-        ...style,
+export default function SkeletonLoader({ lines = 3, height = 16, width = '100%' }) {
+    const shimmer = {
+        background: 'linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%)',
+        backgroundSize: '400px 100%',
+        animation: 'shimmer 1.4s infinite',
+        borderRadius: 4,
     }
-
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {Array.from({ length: lines }).map((_, i) => (
-                <div
-                    key={i}
-                    style={{
-                        ...shimmerStyle,
-                        height,
-                        width: i === lines - 1 && lines > 1 ? '65%' : width,
-                    }}
-                />
+                <div key={i} style={{
+                    ...shimmer, height,
+                    width: i === lines - 1 && lines > 1 ? '60%' : width,
+                }} />
             ))}
         </div>
     )
 }
 
-// Card-shaped skeleton
-export function SkeletonCard({ height = 100, style = {} }) {
+export function SkeletonCard({ height = 80 }) {
     return (
         <div style={{
-            background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
-            backgroundSize: '200% 100%',
-            animation: 'sakinahShimmer 1.5s infinite',
-            borderRadius: 16,
-            height,
-            ...style,
+            background: 'linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%)',
+            backgroundSize: '400px 100%',
+            animation: 'shimmer 1.4s infinite',
+            borderRadius: 12, height,
         }} />
     )
 }

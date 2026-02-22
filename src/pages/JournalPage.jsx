@@ -1,345 +1,291 @@
-// Sakinah سكينة — Journal Page (full inline styles)
-// Full CRUD: create, read, update, delete entries. Search, pagination, mood emoji, tags.
+// Sakinah — Journal Page (Stoic style)
+// Clean cards, tag text only, no pill backgrounds
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { supabase } from '../lib/supabase'
-import Navbar from '../components/Navbar'
+import BottomNav from '../components/BottomNav'
 import ConfirmModal from '../components/ConfirmModal'
 import { SkeletonCard } from '../components/SkeletonLoader'
 
 const PAGE_SIZE = 10
-const MOOD_EMOJIS = ['', '😞', '😟', '😐', '🙂', '😊']
+const MOODS = ['', '😞', '😟', '😐', '🙂', '😊']
 
-const BM_MONTHS = ['Januari', 'Februari', 'Mac', 'April', 'Mei', 'Jun', 'Julai', 'Ogos', 'September', 'Oktober', 'November', 'Disember']
-
-function formatDate(dateStr, lang) {
-    const d = new Date(dateStr)
-    if (lang === 'bm') return `${d.getDate()} ${BM_MONTHS[d.getMonth()]} ${d.getFullYear()}`
-    return d.toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })
-}
-
-function truncate(text, len = 120) {
-    if (!text || text.length <= len) return text
-    return text.slice(0, len).trimEnd() + '…'
-}
-
-// ── Entry Form Modal ──────────────────────────────────────────────────────────
-function EntryModal({ entry, onClose, onSave, t }) {
-    const [title, setTitle] = useState(entry?.title || '')
-    const [content, setContent] = useState(entry?.content || '')
-    const [mood, setMood] = useState(entry?.mood || 0)
-    const [tags, setTags] = useState(entry?.tags?.join(', ') || '')
-    const [saving, setSaving] = useState(false)
-    const [error, setError] = useState(null)
-    const isEdit = Boolean(entry?.id)
-
-    async function handleSave() {
-        if (!content.trim()) { setError(t('journalFormContent') + ' (required)'); return }
-        setSaving(true)
-        try {
-            await onSave({ title: title.trim() || null, content: content.trim(), mood: mood || null, tags: tags ? tags.split(',').map(s => s.trim()).filter(Boolean) : [] }, entry?.id)
-            onClose()
-        } catch (err) {
-            setError(err.message || t('journalSaveError'))
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    const inputStyle = {
-        width: '100%', padding: '11px 14px',
-        background: 'rgba(255,255,255,0.05)',
-        border: '1px solid var(--glass-border)',
-        borderRadius: 10, color: 'var(--text-primary)',
-        fontSize: 14, outline: 'none', fontFamily: 'inherit',
-        transition: 'border-color 0.2s',
-    }
-
+function PlusIcon() {
     return (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-            <div style={{
-                background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)', borderRadius: '20px 20px 0 0',
-                padding: '16px 20px 32px', width: '100%', maxWidth: 480,
-                maxHeight: '92vh', overflowY: 'auto', animation: 'sakinahSlideUp 0.3s ease',
-            }} onClick={e => e.stopPropagation()}>
-                <div style={{ width: 40, height: 4, background: 'var(--glass-border)', borderRadius: 2, margin: '0 auto 20px' }} />
-                <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: 'var(--text-primary)', marginBottom: 20 }}>
-                    {isEdit ? t('journalEditTitle') : t('journalCreateTitle')}
-                </h2>
-
-                {error && <p style={{ color: 'var(--error)', fontSize: 13, marginBottom: 12 }}>⚠️ {error}</p>}
-
-                <div style={{ marginBottom: 14 }}>
-                    <label style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>{t('journalFormTitle')}</label>
-                    <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('journalFormTitlePlaceholder')} style={inputStyle}
-                        onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-                        onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'} />
-                </div>
-
-                <div style={{ marginBottom: 14 }}>
-                    <label style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>{t('journalFormContent')} *</label>
-                    <textarea value={content} onChange={e => setContent(e.target.value)} placeholder={t('journalFormContentPlaceholder')} rows={6} style={{ ...inputStyle, resize: 'none', lineHeight: 1.7 }}
-                        onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-                        onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'} />
-                </div>
-
-                <div style={{ marginBottom: 14 }}>
-                    <label style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 8 }}>{t('journalFormMood')}</label>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                        {[1, 2, 3, 4, 5].map(n => (
-                            <button key={n} onClick={() => setMood(mood === n ? 0 : n)} style={{
-                                flex: 1, padding: '10px 0', borderRadius: 10,
-                                border: `2px solid ${mood === n ? 'var(--accent)' : 'var(--glass-border)'}`,
-                                background: mood === n ? 'rgba(201,169,110,0.15)' : 'transparent',
-                                fontSize: 22, cursor: 'pointer', transition: 'all 0.2s ease',
-                                transform: mood === n ? 'scale(1.1)' : 'scale(1)',
-                            }}>{MOOD_EMOJIS[n]}</button>
-                        ))}
-                    </div>
-                </div>
-
-                <div style={{ marginBottom: 22 }}>
-                    <label style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>{t('journalFormTags')}</label>
-                    <input value={tags} onChange={e => setTags(e.target.value)} placeholder={t('journalFormTagsPlaceholder')} style={inputStyle}
-                        onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-                        onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'} />
-                </div>
-
-                <div style={{ display: 'flex', gap: 10 }}>
-                    <button onClick={onClose} style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid var(--glass-border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 14, cursor: 'pointer' }}>
-                        {t('journalCancelBtn')}
-                    </button>
-                    <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: '12px 0', borderRadius: 10, border: 'none', background: 'var(--accent-gradient)', color: 'white', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
-                        {saving ? '...' : (isEdit ? t('journalUpdateBtn') : t('journalSaveBtn'))}
-                    </button>
-                </div>
-            </div>
-        </div>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+    )
+}
+function SearchIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round">
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
     )
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function JournalPage() {
     const { user } = useAuth()
-    const { lang, t } = useLanguage()
+    const { t, lang } = useLanguage()
     const [entries, setEntries] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [search, setSearch] = useState('')
-    const [page, setPage] = useState(1)
-    const [editEntry, setEditEntry] = useState(null)  // null = closed, {} = new, {...} = edit
-    const [showModal, setShowModal] = useState(false)
+    const [page, setPage] = useState(0)
+    const [hasMore, setHasMore] = useState(false)
+    const [showForm, setShowForm] = useState(false)
+    const [editing, setEditing] = useState(null)
     const [deleteId, setDeleteId] = useState(null)
+    const [saving, setSaving] = useState(false)
+    const [formError, setFormError] = useState(null)
 
-    const loadEntries = useCallback(async () => {
-        if (!user) return
-        setLoading(true)
-        setError(null)
-        try {
-            const { data, error } = await supabase
-                .from('journal_entries')
-                .select('*')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false })
-            if (error) throw error
-            setEntries(data || [])
-        } catch (err) {
-            setError(err.message)
-        } finally {
-            setLoading(false)
-        }
-    }, [user])
+    // Form state
+    const [fTitle, setFTitle] = useState('')
+    const [fContent, setFContent] = useState('')
+    const [fMood, setFMood] = useState(0)
+    const [fTags, setFTags] = useState('')
 
-    useEffect(() => { loadEntries() }, [loadEntries])
+    const load = useCallback(async (reset = false) => {
+        if (!user?.id) return
+        setLoading(true); setError(null)
+        const offset = reset ? 0 : page * PAGE_SIZE
+        let q = supabase.from('journal_entries').select('*', { count: 'exact' })
+            .eq('user_id', user.id).order('created_at', { ascending: false })
+            .range(offset, offset + PAGE_SIZE - 1)
+        if (search) q = q.or(`title.ilike.%${search}%,content.ilike.%${search}%`)
+        const { data, count, error: err } = await q
+        if (err) { setError(t('journalError')); setLoading(false); return }
+        setEntries(reset ? (data || []) : prev => [...prev, ...(data || [])])
+        setHasMore((offset + PAGE_SIZE) < (count || 0))
+        setLoading(false)
+    }, [user?.id, page, search])
 
-    // Client-side search filter
-    const filtered = useMemo(() => {
-        if (!search.trim()) return entries
-        const q = search.toLowerCase()
-        return entries.filter(e =>
-            e.content?.toLowerCase().includes(q) ||
-            e.title?.toLowerCase().includes(q)
-        )
-    }, [entries, search])
+    useEffect(() => { setPage(0); load(true) }, [search, user?.id])
 
-    const paginated = filtered.slice(0, page * PAGE_SIZE)
-    const hasMore = paginated.length < filtered.length
-
-    async function handleSave(data, id) {
-        if (id) {
-            // Update
-            const { error } = await supabase.from('journal_entries').update(data).eq('id', id).eq('user_id', user.id)
-            if (error) throw error
-            setEntries(prev => prev.map(e => e.id === id ? { ...e, ...data } : e))
-        } else {
-            // Create
-            const optimisticId = `opt-${Date.now()}`
-            const optimistic = { id: optimisticId, user_id: user.id, ...data, created_at: new Date().toISOString() }
-            setEntries(prev => [optimistic, ...prev])
-            try {
-                const { data: saved, error } = await supabase.from('journal_entries').insert({ user_id: user.id, ...data }).select().single()
-                if (error) throw error
-                setEntries(prev => prev.map(e => e.id === optimisticId ? saved : e))
-            } catch (err) {
-                setEntries(prev => prev.filter(e => e.id !== optimisticId))
-                throw err
-            }
-        }
+    function openCreate() {
+        setEditing(null); setFTitle(''); setFContent(''); setFMood(0); setFTags('')
+        setFormError(null); setShowForm(true)
     }
-
+    function openEdit(e) {
+        setEditing(e); setFTitle(e.title || ''); setFContent(e.content); setFMood(e.mood || 0)
+        setFTags((e.tags || []).join(', ')); setFormError(null); setShowForm(true)
+    }
+    async function handleSave() {
+        if (!fContent.trim()) { setFormError(t('journalFormContent')); return }
+        setSaving(true); setFormError(null)
+        const tags = fTags.split(',').map(x => x.trim()).filter(Boolean)
+        const payload = { title: fTitle.trim() || null, content: fContent.trim(), mood: fMood || null, tags }
+        const { error: err } = editing
+            ? await supabase.from('journal_entries').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', editing.id)
+            : await supabase.from('journal_entries').insert({ ...payload, user_id: user.id })
+        if (err) { setFormError(t('journalSaveError')); setSaving(false); return }
+        setSaving(false); setShowForm(false); load(true)
+    }
     async function handleDelete(id) {
-        setEntries(prev => prev.filter(e => e.id !== id))
-        try {
-            const { error } = await supabase.from('journal_entries').delete().eq('id', id).eq('user_id', user.id)
-            if (error) throw error
-        } catch {
-            loadEntries()
-        }
-        setDeleteId(null)
+        await supabase.from('journal_entries').delete().eq('id', id)
+        setDeleteId(null); load(true)
     }
 
-    const cardStyle = {
-        background: 'var(--bg-card)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid var(--glass-border)',
-        borderRadius: 16, padding: '14px 16px',
-        cursor: 'pointer', transition: 'all 0.2s ease',
-        animation: 'sakinahSlideUp 0.3s ease',
+    const inputStyle = {
+        width: '100%', padding: '13px 14px', borderRadius: 12,
+        background: 'var(--surface)', border: '0.5px solid var(--border)',
+        color: 'var(--text)', fontSize: 15, outline: 'none',
+        fontFamily: 'Noto Sans, sans-serif', marginBottom: 12,
+        transition: 'border-color 0.2s',
     }
 
     return (
-        <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}>
-            <Navbar />
-            <main style={{ flex: 1, maxWidth: 480, margin: '0 auto', padding: '20px 16px 40px', width: '100%' }}>
-                {/* Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                    <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>
-                        {t('journalTitle')}
-                    </h1>
-                    <button
-                        onClick={() => { setEditEntry({}); setShowModal(true) }}
-                        style={{ background: 'var(--accent-gradient)', border: 'none', color: 'white', fontWeight: 700, fontSize: 13, padding: '9px 16px', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                        + {t('journalNewEntry')}
-                    </button>
-                </div>
+        <>
+            <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingTop: 48, paddingBottom: 96, maxWidth: 480, margin: '0 auto' }}>
+                <div style={{ padding: '0 20px' }}>
 
-                {/* Search */}
-                <div style={{ marginBottom: 16, position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 16 }}>🔍</span>
-                    <input
-                        value={search}
-                        onChange={e => { setSearch(e.target.value); setPage(1) }}
-                        placeholder={t('journalSearchPlaceholder')}
-                        style={{
-                            width: '100%', padding: '11px 14px 11px 36px',
-                            background: 'var(--bg-card)', border: '1px solid var(--glass-border)',
-                            borderRadius: 12, color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
-                        }}
-                        onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-                        onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
-                    />
-                </div>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 600, color: 'var(--text)' }}>
+                            {t('journalTitle')}
+                        </h1>
+                        <button onClick={openCreate} style={{
+                            width: 40, height: 40, borderRadius: '50%',
+                            background: 'var(--gold)', border: 'none',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', color: '#1A160B',
+                        }}>
+                            <PlusIcon />
+                        </button>
+                    </div>
 
-                {/* Content */}
-                {loading ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        {[1, 2, 3].map(i => <SkeletonCard key={i} height={90} />)}
+                    {/* Search */}
+                    <div style={{ position: 'relative', marginBottom: 24 }}>
+                        <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }}>
+                            <SearchIcon />
+                        </div>
+                        <input value={search} onChange={e => setSearch(e.target.value)}
+                            placeholder={t('journalSearchPlaceholder')}
+                            style={{ ...inputStyle, paddingLeft: 38, marginBottom: 0 }}
+                            onFocus={e => e.currentTarget.style.borderColor = 'var(--gold)'}
+                            onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                        />
                     </div>
-                ) : error ? (
-                    <div style={{ textAlign: 'center', padding: 32 }}>
-                        <p style={{ color: 'var(--error)', fontSize: 14, marginBottom: 12 }}>⚠️ {error}</p>
-                        <button onClick={loadEntries} style={{ background: 'var(--accent-gradient)', border: 'none', color: 'white', padding: '9px 20px', borderRadius: 10, cursor: 'pointer' }}>{t('retry')}</button>
-                    </div>
-                ) : filtered.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '48px 20px' }}>
-                        <p style={{ fontSize: 40, marginBottom: 12 }}>📔</p>
-                        <p style={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 6 }}>
-                            {search ? t('journalNoResults') : t('journalNoEntries')}
-                        </p>
-                        {!search && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>{t('journalNoEntriesSub')}</p>}
-                    </div>
-                ) : (
-                    <>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {paginated.map(entry => (
-                                <div
-                                    key={entry.id}
-                                    style={cardStyle}
-                                    onClick={() => { setEditEntry(entry); setShowModal(true) }}
-                                    onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(201,169,110,0.4)'}
-                                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
-                                >
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
-                                        <div style={{ flex: 1 }}>
-                                            {entry.title && (
-                                                <p style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{entry.title}</p>
+
+                    {/* Entries */}
+                    {loading && entries.length === 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {[1, 2, 3].map(i => <SkeletonCard key={i} height={100} />)}
+                        </div>
+                    ) : error ? (
+                        <div style={{ textAlign: 'center', padding: 40 }}>
+                            <p style={{ color: 'var(--error)', marginBottom: 12 }}>{error}</p>
+                            <button onClick={() => load(true)} style={{ color: 'var(--gold)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}>{t('retry')}</button>
+                        </div>
+                    ) : entries.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '60px 0' }}>
+                            <p style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: 'var(--text)', marginBottom: 8 }}>
+                                {search ? t('journalNoResults') : t('journalNoEntries')}
+                            </p>
+                            {!search && <p style={{ color: 'var(--text-sub)', fontSize: 14 }}>{t('journalNoEntriesSub')}</p>}
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {entries.map(entry => {
+                                const date = new Date(entry.created_at)
+                                const dateStr = date.toLocaleDateString(lang === 'bm' ? 'ms-MY' : 'en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
+                                return (
+                                    <div key={entry.id} onClick={() => openEdit(entry)} style={{
+                                        background: 'var(--card)', borderRadius: 14, padding: 18,
+                                        cursor: 'pointer', boxShadow: 'var(--shadow-card)',
+                                        transition: 'background 0.15s ease',
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                {entry.title && (
+                                                    <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 15, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {entry.title}
+                                                    </div>
+                                                )}
+                                                <div style={{ color: 'var(--text-sub)', fontSize: 14, lineHeight: 1.55, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                                    {entry.content}
+                                                </div>
+                                            </div>
+                                            {entry.mood > 0 && (
+                                                <span style={{ fontSize: 20, marginLeft: 12, flexShrink: 0 }}>{MOODS[entry.mood]}</span>
                                             )}
-                                            <p style={{ color: 'var(--text-muted)', fontSize: 11 }}>{formatDate(entry.created_at, lang)}</p>
                                         </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            {entry.mood && <span style={{ fontSize: 20 }}>{MOOD_EMOJIS[entry.mood]}</span>}
-                                            <button
-                                                onClick={e => { e.stopPropagation(); setDeleteId(entry.id) }}
-                                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: '4px 6px', borderRadius: 6 }}
-                                                onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
-                                                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                                            >
-                                                🗑
-                                            </button>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                                {(entry.tags || []).map(tag => (
+                                                    <span key={tag} style={{
+                                                        fontSize: 12, color: 'var(--text-muted)',
+                                                        borderBottom: '1px solid var(--gold)',
+                                                        paddingBottom: 1, fontFamily: 'Noto Sans, sans-serif',
+                                                    }}>{tag}</span>
+                                                ))}
+                                            </div>
+                                            <span style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>{dateStr}</span>
                                         </div>
                                     </div>
-                                    <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6 }}>
-                                        {truncate(entry.content)}
-                                    </p>
-                                    {entry.tags?.length > 0 && (
-                                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
-                                            {entry.tags.map(tag => (
-                                                <span key={tag} style={{ background: 'rgba(201,169,110,0.1)', color: 'var(--accent)', fontSize: 10, padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(201,169,110,0.2)' }}>
-                                                    {tag}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+                                )
+                            })}
+                            {hasMore && (
+                                <button onClick={() => { const next = page + 1; setPage(next); load() }} style={{
+                                    width: '100%', padding: '14px 0', marginTop: 4,
+                                    background: 'none', border: '0.5px solid var(--border)',
+                                    borderRadius: 12, color: 'var(--text-sub)', fontSize: 14,
+                                    cursor: 'pointer', fontFamily: 'Noto Sans, sans-serif',
+                                }}>
+                                    {t('journalLoadMore')}
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Entry form — bottom sheet */}
+            {showForm && (
+                <>
+                    <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, zIndex: 8000, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }} />
+                    <div style={{
+                        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+                        width: '100%', maxWidth: 480, background: 'var(--card)',
+                        borderRadius: '20px 20px 0 0',
+                        padding: '12px 20px', paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+                        maxHeight: '92vh', overflowY: 'auto',
+                        zIndex: 8001, animation: 'slideUpSheet 0.3s ease',
+                    }}>
+                        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 20px' }} />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 600, color: 'var(--text)' }}>
+                                {editing ? t('journalEditTitle') : t('journalCreateTitle')}
+                            </h2>
+                            {editing && (
+                                <button onClick={() => setDeleteId(editing.id)} style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: 14, fontFamily: 'Noto Sans, sans-serif' }}>
+                                    {t('delete')}
+                                </button>
+                            )}
                         </div>
 
-                        {hasMore && (
-                            <button
-                                onClick={() => setPage(p => p + 1)}
-                                style={{ width: '100%', marginTop: 14, padding: '12px 0', background: 'transparent', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', borderRadius: 12, fontSize: 14, cursor: 'pointer' }}
-                                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-                                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
-                            >
-                                {t('journalLoadMore')} ({filtered.length - paginated.length})
-                            </button>
-                        )}
-                    </>
-                )}
-            </main>
+                        <input value={fTitle} onChange={e => setFTitle(e.target.value)}
+                            placeholder={t('journalFormTitlePlaceholder')} style={inputStyle}
+                            onFocus={e => e.currentTarget.style.borderColor = 'var(--gold)'}
+                            onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+                        <textarea value={fContent} onChange={e => setFContent(e.target.value)}
+                            placeholder={t('journalFormContentPlaceholder')} rows={5}
+                            style={{ ...inputStyle, resize: 'vertical' }}
+                            onFocus={e => e.currentTarget.style.borderColor = 'var(--gold)'}
+                            onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
 
-            {showModal && (
-                <EntryModal
-                    entry={editEntry}
-                    onClose={() => { setShowModal(false); setEditEntry(null) }}
-                    onSave={handleSave}
-                    t={t}
-                />
+                        {/* Mood */}
+                        <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: 13, color: 'var(--text-sub)', marginBottom: 10 }}>{t('journalFormMood')}</div>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                {MOODS.slice(1).map((emoji, i) => (
+                                    <button key={i + 1} onClick={() => setFMood(fMood === i + 1 ? 0 : i + 1)} style={{
+                                        fontSize: 26, background: 'none', border: 'none', cursor: 'pointer',
+                                        opacity: fMood === 0 || fMood === i + 1 ? 1 : 0.3,
+                                        transform: fMood === i + 1 ? 'scale(1.3)' : 'scale(1)',
+                                        transition: 'all 0.15s ease',
+                                    }}>
+                                        {emoji}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <input value={fTags} onChange={e => setFTags(e.target.value)}
+                            placeholder={t('journalFormTagsPlaceholder')} style={inputStyle}
+                            onFocus={e => e.currentTarget.style.borderColor = 'var(--gold)'}
+                            onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+
+                        {formError && <p style={{ color: 'var(--error)', fontSize: 13, marginBottom: 12 }}>{formError}</p>}
+
+                        <div style={{ display: 'flex', gap: 10 }}>
+                            <button onClick={() => setShowForm(false)} style={{
+                                flex: 1, padding: '14px 0', borderRadius: 12,
+                                border: '0.5px solid var(--border)', background: 'transparent',
+                                color: 'var(--text-sub)', fontSize: 15, cursor: 'pointer',
+                                fontFamily: 'Noto Sans, sans-serif',
+                            }}>{t('cancel')}</button>
+                            <button onClick={handleSave} disabled={saving} style={{
+                                flex: 2, padding: '14px 0', borderRadius: 12, border: 'none',
+                                background: 'var(--gold)', color: '#1A160B',
+                                fontWeight: 600, fontSize: 15, cursor: 'pointer',
+                                fontFamily: 'Noto Sans, sans-serif', opacity: saving ? 0.7 : 1,
+                            }}>
+                                {saving ? '...' : editing ? t('journalUpdateBtn') : t('journalSaveBtn')}
+                            </button>
+                        </div>
+                    </div>
+                </>
             )}
 
             {deleteId && (
-                <ConfirmModal
-                    message={t('journalDeleteConfirm')}
-                    confirmLabel={t('journalDeleteBtn')}
-                    cancelLabel={t('journalCancelBtn')}
-                    onConfirm={() => handleDelete(deleteId)}
-                    onCancel={() => setDeleteId(null)}
-                    danger
-                />
+                <ConfirmModal message={t('journalDeleteConfirm')} confirmLabel={t('delete')} cancelLabel={t('cancel')}
+                    onConfirm={() => handleDelete(deleteId)} onCancel={() => setDeleteId(null)} danger />
             )}
-        </div>
+            <BottomNav />
+        </>
     )
 }

@@ -8,7 +8,8 @@ const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/mode
 function buildPayload(messages, systemPrompt) {
     const contents = messages.map((msg) => ({
         role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }],
+        // Handle both {content: string} and pre-formatted {parts: [{text}]}
+        parts: msg.parts || [{ text: msg.content || '' }],
     }))
 
     return {
