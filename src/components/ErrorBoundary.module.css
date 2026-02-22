@@ -1,0 +1,32 @@
+.container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+}
+
+.card {
+    text-align: center;
+    padding: 48px 32px;
+    max-width: 400px;
+    width: 100%;
+}
+
+.icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.title {
+    font-size: 24px;
+    margin-bottom: 12px;
+    color: #f0e6ff;
+}
+
+.message {
+    color: rgba(240, 230, 255, 0.6);
+    font-size: 14px;
+    margin-bottom: 24px;
+    line-height: 1.6;
+}

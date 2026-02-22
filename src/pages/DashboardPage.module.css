@@ -1,0 +1,257 @@
+.layout {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.main {
+    flex: 1;
+    padding: 32px 20px 48px;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+/* Header */
+.header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    animation: fadeIn 0.5s ease;
+}
+
+.greeting {
+    font-size: 16px;
+    color: rgba(240, 230, 255, 0.45);
+    margin-bottom: 4px;
+}
+
+.name {
+    font-size: 36px;
+    margin-bottom: 8px;
+    color: #f0e6ff;
+}
+
+.wave {
+    display: inline-block;
+    animation: wave 2s ease infinite;
+    transform-origin: 70% 70%;
+}
+
+@keyframes wave {
+
+    0%,
+    60%,
+    100% {
+        transform: rotate(0deg);
+    }
+
+    10%,
+    30% {
+        transform: rotate(14deg);
+    }
+
+    20% {
+        transform: rotate(-8deg);
+    }
+
+    40% {
+        transform: rotate(-4deg);
+    }
+
+    50% {
+        transform: rotate(10deg);
+    }
+}
+
+.subtitle {
+    font-size: 15px;
+    color: rgba(240, 230, 255, 0.45);
+}
+
+.journalBtn {
+    flex-shrink: 0;
+    height: 44px;
+    white-space: nowrap;
+}
+
+/* Daily quote */
+.quoteCard {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 24px;
+    animation: fadeIn 0.5s ease 0.1s both;
+}
+
+.quoteIcon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(99, 102, 241, 0.3));
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #a855f7;
+    flex-shrink: 0;
+}
+
+.dailyQuote {
+    font-style: italic;
+    font-size: 15px;
+    color: rgba(240, 230, 255, 0.65);
+    line-height: 1.7;
+    font-family: 'Playfair Display', serif;
+}
+
+/* Stats */
+.statsGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    animation: fadeIn 0.5s ease 0.2s both;
+}
+
+.loadingArea {
+    display: flex;
+    justify-content: center;
+    padding: 40px;
+}
+
+.errorBox {
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    border-radius: 12px;
+    padding: 16px 20px;
+    font-size: 14px;
+    color: #f87171;
+}
+
+/* Recent entries */
+.section {
+    animation: fadeIn 0.5s ease 0.3s both;
+}
+
+.sectionHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.sectionTitle {
+    font-size: 20px;
+    color: #f0e6ff;
+}
+
+.entriesByDay {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.entryRow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.entryRow:hover {
+    transform: translateX(4px);
+    border-color: rgba(168, 85, 247, 0.4);
+}
+
+.dayBadge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #a855f7;
+    background: rgba(168, 85, 247, 0.12);
+    border: 1px solid rgba(168, 85, 247, 0.25);
+    padding: 3px 10px;
+    border-radius: 20px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-width: 80px;
+    text-align: center;
+}
+
+.entryText {
+    font-size: 14px;
+    color: rgba(240, 230, 255, 0.7);
+    line-height: 1.5;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.entryTime {
+    font-size: 11px;
+    color: rgba(240, 230, 255, 0.3);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Empty state */
+.emptyEntries {
+    text-align: center;
+    padding: 48px 24px;
+}
+
+.emptyIcon {
+    color: rgba(168, 85, 247, 0.4);
+    margin-bottom: 16px;
+}
+
+.emptyTitle {
+    font-size: 18px;
+    color: #f0e6ff;
+    margin-bottom: 8px;
+}
+
+.emptySub {
+    font-size: 14px;
+    color: rgba(240, 230, 255, 0.4);
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .statsGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .name {
+        font-size: 28px;
+    }
+
+    .header {
+        flex-direction: column;
+    }
+
+    .journalBtn {
+        width: 100%;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

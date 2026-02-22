@@ -1,0 +1,128 @@
+.wrapper {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    animation: fadeIn 0.35s ease forwards;
+}
+
+.userWrapper {
+    flex-direction: row-reverse;
+}
+
+.aiWrapper {
+    flex-direction: row;
+}
+
+.bubble {
+    max-width: min(75%, 560px);
+    padding: 14px 18px;
+    border-radius: 18px;
+    line-height: 1.65;
+    position: relative;
+}
+
+.userBubble {
+    background: linear-gradient(135deg, #a855f7, #6366f1);
+    color: white;
+    border-bottom-right-radius: 4px;
+    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.3);
+}
+
+.aiBubble {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    color: #f0e6ff;
+    border-bottom-left-radius: 4px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.aiName {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #a855f7;
+    margin-bottom: 6px;
+}
+
+.content {
+    font-size: 15px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.time {
+    display: block;
+    font-size: 11px;
+    margin-top: 6px;
+    opacity: 0.5;
+}
+
+.userBubble .time {
+    text-align: right;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.aiBubble .time {
+    color: rgba(240, 230, 255, 0.4);
+}
+
+.aiAvatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #a855f7, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    flex-shrink: 0;
+    box-shadow: 0 0 16px rgba(168, 85, 247, 0.4);
+}
+
+.userAvatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: rgba(240, 230, 255, 0.6);
+    flex-shrink: 0;
+}
+
+.dateDivider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0;
+}
+
+.dateLine {
+    flex: 1;
+    height: 1px;
+    background: rgba(168, 85, 247, 0.15);
+}
+
+.dateLabel {
+    font-size: 12px;
+    color: rgba(240, 230, 255, 0.35);
+    white-space: nowrap;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
