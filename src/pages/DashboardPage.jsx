@@ -218,7 +218,7 @@ export default function DashboardPage() {
                                     color: 'var(--text-sub)', fontSize: 15, lineHeight: 1.75,
                                     marginBottom: 14, fontStyle: 'italic',
                                 }}>
-                                    "{lang === 'bm' ? ayah.malay : ayah.malay}"
+                                    &ldquo;{lang === 'bm' ? ayah.malay : (ayah.english || ayah.malay)}&rdquo;
                                 </p>
                                 {/* Reference */}
                                 <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
@@ -247,7 +247,7 @@ export default function DashboardPage() {
                                 </p>
                                 {/* Translation — full, no clip */}
                                 <p style={{ color: 'var(--text-sub)', fontSize: 15, lineHeight: 1.75, marginBottom: 18, fontStyle: 'italic' }}>
-                                    "{lang === 'bm' ? hadith.malay : hadith.english}"
+                                    &ldquo;{lang === 'bm' ? hadith.malay : hadith.english}&rdquo;
                                 </p>
                                 {/* Source row */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '0.5px solid var(--border)', paddingTop: 14 }}>

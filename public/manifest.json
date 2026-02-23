@@ -1,0 +1,25 @@
+{
+    "name": "Sakinah",
+    "short_name": "Sakinah",
+    "description": "Ruang tenang untuk jiwa kamu — aplikasi kesihatan Islam peribadi",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#ffffff",
+    "theme_color": "#000000",
+    "start_url": "/",
+    "scope": "/",
+    "lang": "ms",
+    "icons": [
+        {
+            "src": "/icon.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": [
+        "lifestyle",
+        "health",
+        "religion"
+    ]
+}
